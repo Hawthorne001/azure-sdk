@@ -6,182 +6,197 @@ folder: rust
 sidebar: general_sidebar
 ---
 
-{% include draft.html content="The Rust Language guidelines are in DRAFT status" %}
+## Safety {#rust-safety}
 
-> TODO: This section needs to be driven by code in the Core library.
+The following guidelines are to foster secure code not only within Azure SDK for Rust, but on behalf of our customers.
 
-## API Implementation
+### Debug Trait {#rust-safety-debug}
 
-This section describes guidelines for implementing Azure SDK client libraries. Please note that some of these guidelines are automatically enforced by code generation tools.
+{% include requirement/MAY id="rust-safety-debug-derive" %} derive or implement `Debug` on types as long as you guarantee no PII may be leaked.
 
-### Service Client
+To elide some fields from `Debug` output, you may use `finish_non_exhaustive()` like so:
 
-When configuring your client library, particular care must be taken to ensure that the consumer of your client library can properly configure the connectivity to your Azure service both globally (along with other client libraries the consumer is using) and specifically with your client library.
+```rust
+use std::fmt;
 
-> TODO: add a brief mention of the approach to implementing service clients.
+impl fmt::Debug for MyModel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MyModel")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+```
 
-#### Service Methods
+{% include requirement/SHOULD id="rust-safety-debug-safedebug" %} derive or implement `azure_core::fmt::SafeDebug` on types if you need a `Debug` implementation but cannot reasonably guarantee no PII may be leaked.
 
-> TODO: Briefly introduce that service methods are implemented via an `HttpPipeline` instance. Mention that much of this is done for you using code generation.
+`SafeDebug` will only output the name of the type or, if information is available in TypeSpec, show only fields that have been declared safe from leaking PII.
 
-##### HttpPipeline
+## Service Clients {#rust-client}
 
-The following example shows a typical way of using `HttpPipeline` to implement a service call method. The `HttpPipeline` will handle common HTTP requirements such as the user agent, logging, distributed tracing, retries, and proxy configuration.
+Implementation details of [service clients](introduction.md#rust-client).
 
-> TODO: Show an example of invoking the pipeline
+### Convenience Clients {#rust-client-convenience}
 
-##### HttpPipelinePolicy/Custom Policies
+Most service client crates are generated from [TypeSpec](https://aka.ms/typespec). Clients that want to provide convenience methods can choose any or all of the options as appropriate:
 
-The HTTP pipeline includes a number of policies that all requests pass through. Examples of policies include setting required headers, authentication, generating a request ID, and implementing proxy authentication.  `HttpPipelinePolicy` is the base type of all policies (plugins) of the `HttpPipeline`. This section describes guidelines for designing custom policies.
+{% include requirement/MAY id="rust-client-convenience-separate" %} implement a separate client that provides features not described in a service specification.
 
-> TODO: Show how to customize a pipeline
+{% include requirement/MAY id="rust-client-convenience-wrap" %} implement a client which wraps a generated client e.g., using [newtype][rust-lang-newtype], and exposes necessary methods from the underlying client as well as any convenience methods. You might consider this approach if you want to effectively hide most generated methods and define replacements. You are responsible for transposing documentation and following all guidelines herein.
 
-#### Service Method Parameters
+{% include requirement/MAY id="rust-client-convenience-extension" %} define [extension methods][rust-lang-extension-methods] in a trait that call existing public methods or directly on the `pipeline`, e.g.,
 
-> TODO: This section needs to be driven by code in the Core library.
+```rust
+pub trait SecretClientExt {
+    async fn deserialize_secret<T: serde::de::DeserializeOwned>(
+        &self,
+        name: impl AsRef<str>,
+        version: Option<impl AsRef<str>>,
+    ) -> Result<Response<T>>;
+}
 
-##### Parameter Validation
+impl SecretClientExt for SecretClient {
+    async fn deserialize_secret<T: serde::de::DeserializeOwned>(
+        &self,
+        name: impl AsRef<str>,
+        version: Option<impl AsRef<str>>,
+    ) -> Result<T> {
+        let value = self.get_secret(name, version).await?;
+        serde_json::from_str(&value).map_err(Error::from)
+    }
+}
+```
 
-In addition to [general parameter validation guidelines](introduction.md#rust-parameters):
+* The trait **MUST** be exported from the crate root.
+* The trait **MUST** use the name of the client it extends with an "Ext" suffix e.g., "SecretClientExt".
 
-> TODO: Briefly show common patterns for parameter validation
+You might consider this approach if the generated methods are sufficient but you want to add convenience methods.
 
-### Supporting Types
+#### Convenience Client Telemetry {#rust-client-convenience-telemetry}
 
-> TODO: This section needs to be driven by code in the Core library.
+In all options above except if merely re-exposing public APIs without alteration:
 
-#### Serialization {#rust-usage-json}
+{% include requirement/MUST id="rust-client-convenience-telemetry-telemeter" %} telemeter the convenience client methods just like any service client methods.
 
-> TODO: This section needs to be driven by code in the Core library.
+### Tests {#rust-client-tests}
 
-##### JSON Serialization
+We will implement tests [idiomatically with cargo][rust-lang-tests].
 
-> TODO: This section needs to be driven by code in the Core library.
+#### Unit tests {#rust-client-tests-unit}
 
-#### Enumeration-like Structs
+{% include requirement/MUST id="rust-client-tests-unit-location" %} include unit tests in the module containing the subject being tested.
 
-> TODO: Add section> TODO: Add section
+{% include requirement/MAY id="rust-client-tests-unit-directory" %} separate unit tests in a separate file named `tests.rs` under a separate directory with the same name as the module you're testing e.g., tests may go into `foo/tests.rs` to test module `foo`. Module `foo` would then include `$[cfg(test)] mod tests;`. This is useful if your module contains a lot of code and you have a lot of tests that make maintaining and reviewing the source file more difficult.
 
-#### Using Azure Core Types
+{% include requirement/SHOULD id="rust-client-tests-unit-module" %} put all tests into a `tests` submodule.
 
-> TODO: Add section> TODO: Add section
+{% include requirement/SHOULD id="rust-client-tests-unit-prefix" %} preface tests with "test_" unless you need to disambiguate with the function being tested.
 
-### SDK Feature Implementation
+Putting these requirements together, you should have code similar to:
 
-#### Configuration
+```rust
+pub fn hello() -> String {
+    todo!()
+}
 
-> TODO: This section needs to be driven by code in the Core library.
+pub async fn read_config() -> azure_core::Result<Configuration> {
+    todo!()
+}
 
-#### Logging
-
-> TODO: Add section> TODO: Add section
-
-##### Rust Logging specific details
-
-> TODO: Add section
-
-#### Distributed Tracing {#rust-distributedtracing}
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Telemetry
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-### Testing
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-### Language-specific other
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Complexity Management
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Templates
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Macros
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Type Safety Recommendations
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Const and Reference members
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Integer sizes
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Secure functions
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Enumerations
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Physical Design
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Class Types (including `union`s and `struct`s)
-
-{% include draft.html content="Guidance coming soon ..." %}
-
-> TODO: Add section
-
-#### Tooling
-
-We use a common build and test pipeline to provide for automatic distribution of client libraries. To support this, we use common tooling.
-
-> TODO: Add section> TODO: Add section
-
-## Supported platforms
-
-{% include requirement/MUST id="rust-platform-min" %} support the following platforms and associated compilers when implementing your client library.
-
-### Windows
-
-> TODO: Add support matrix
-
-### Mac
-
-> TODO: Add support matrix
-
-#### Linux
-
-> TODO: Add support matrix
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_hello() {
+        assert_eq!(hello(), String::from("Hello, world!"));
+    }
+
+    #[tokio::test]
+    async fn reads_config() -> azure_core::Result<Configuration> {
+        let config = read_config().await?;
+        assert_eq!(config.id, 1234);
+        assert_eq!(config.sections.len(), 3);
+    }
+}
+```
+
+#### Integration tests {#rust-client-tests-integration}
+
+{% include requirement/MUST id="rust-client-tests-integration-location" %} include integration tests under the `tests/` subdirectory of your crate.
+
+{% include requirement/SHOULD id="rust-client-tests-integration-recorded" %} write integration tests as [recorded tests][general-recorded-tests].
+
+#### Examples {#rust-client-tests-examples}
+
+{% include requirement/SHOULD id="rust-client-tests-examples-location" %} include examples under the `examples/` subdirectory for primary use cases. These are written as standalone executables but may include shared code modules.
+
+## Directory Layout {#rust-directories}
+
+In addition to Cargo's [project layout][rust-lang-project-layout], service clients' source files should be laid out in the following manner:
+
+```text
+Azure/azure-sdk-for-rust/
+├─ .vscode/cspell.json
+├─ doc/ # general documentation
+├─ eng/ # engineering system pipeline, scripts, etc.
+└─ sdk/
+   └─ {service directory}/ # example: keyvault
+      ├─ .dict.txt
+      └─ {service client crate}/ # example: azure_security_keyvault_secrets
+         ├─ assets.json # best location for most crates, or in {service directory} for all crates
+         ├─ examples/
+         │  ├─ {optional shared code}/
+         │  ├─ example1.rs
+         │  └─ example2.rs
+         ├─ src/
+         │  ├─ generated/
+         │  │  ├─ clients/
+         │  │  │  ├─ foo.rs
+         │  │  │  └─ bar.rs
+         │  │  ├─ enums.rs
+         │  │  └─ models.rs
+         │  ├─ lib.rs
+         │  ├─ models.rs
+         │  └─ {other modules}
+         ├─ tests/
+         │  ├─ {shared code}/
+         │  ├─ integration_test1.rs
+         │  └─ integration_test2.rs
+         └─ Cargo.toml
+```
+
+## Miscellaneous {#rust-miscellaneous}
+
+### Spelling {#rust-miscellaneous-spelling}
+
+{% include requirement/SHOULD id="rust-miscellaneous-spelling-general" %} put general words used across different services and client libraries in the `.vscode/cspell.json` file.
+
+{% include requirement/SHOULD id="rust-miscellaneous-spelling-specific" %} put words specific to a service or otherwise limited use in a `.dict.txt` file in the `{service directory}` as shown in the [directory layout](#rust-directories).
+If you're creating this file, add an entry to `.vscode/cspell.json` as shown below:
+
+```json
+{
+  "dictionaryDefinitions": [
+    {
+      "name": "service-name",
+      "path": "../sdk/service-directory/.dict.txt",
+      "noSuggest": true
+    }
+  ],
+  "overrides": [
+    {
+      "filename": "sdk/service-directory/**",
+      "dictionaries": [
+        "crates",
+        "rust-custom",
+        "service-name"
+      ]
+    }
+  ]
+}
+```
+
+
+<!-- Links -->
+
+{% include refs.md %}
+{% include_relative refs.md %}
