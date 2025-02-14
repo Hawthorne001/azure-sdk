@@ -25,8 +25,24 @@ entries:
       url: /releases/latest/ios.html
     - title: Specs
       url: /releases/latest/specs.html
+  - title: 2025 Releases
+    folderitems:
+    - title: January
+      url: /releases/2025-01/index.html
   - title: 2024 Releases
     folderitems:
+    - title: November
+      url: /releases/2024-11/index.html
+    - title: October
+      url: /releases/2024-10/index.html
+    - title: September
+      url: /releases/2024-09/index.html
+    - title: August
+      url: /releases/2024-08/index.html
+    - title: July
+      url: /releases/2024-07/index.html
+    - title: June
+      url: /releases/2024-06/index.html
     - title: May
       url: /releases/2024-05/index.html
     - title: April
